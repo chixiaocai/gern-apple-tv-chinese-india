@@ -12,7 +12,7 @@ const skip = new Set([
 ]);
 const fields = [
   'title', 'shortTitle', 'showTitle', 'movieTitle', 'episodeTitle', 'subtitle',
-  'description', 'heroDescription', 'summary', 'seoTitle', 'seoDescription',
+  'description', 'heroDescription', 'summary', 'seoTitle', 'seoDescription', 'genre', 'localizedType',
 ];
 const summaries = new Set(['description', 'heroDescription', 'summary', 'seoDescription']);
 const logosAndCovers = /^(?:contentImage(?:16x9|Tall)?|contentLogo|poster(?:16x9|Art)?|cover|tile(?:16x9)?|shelfImage|showLogo|logo)$/i;
@@ -26,8 +26,8 @@ const sources = [
 ];
 
 function contentId(item) {
-  const id = item.id || item.contentId;
-  return typeof id === 'string' && /^umc\.cmc\.[a-z0-9]+$/i.test(id) ? id : undefined;
+  return [item.id, item.canonicalId, item.contentId]
+    .find(id => typeof id === 'string' && /^umc\.cmc\.[a-z0-9]+$/i.test(id));
 }
 
 function* displayItems(root) {
@@ -44,6 +44,40 @@ function* displayItems(root) {
   }
 }
 
+const displayLists = {
+  genres: ['id', 'name'],
+  countriesOfOrigin: ['countryCode', 'displayName'],
+  originalSpokenLanguages: ['locale', 'displayName'],
+  audioTrackLocales: ['locale', 'displayName'],
+  adLocales: ['locale', 'displayName'],
+  closedCaptionedLocales: ['locale', 'displayName'],
+  locales: ['locale', 'displayName'],
+  sdhLocales: ['locale', 'displayName'],
+  subtitledLocales: ['locale', 'displayName'],
+};
+const advisoryLabels = new Map([
+  ['Violence', '暴力'], ['Language', '粗俗语言'], ['Strong Language', '粗俗语言'],
+  ['Sexual Content', '性内容'], ['Nudity', '裸露'],
+  ['Drugs or Drug Use', '毒品或用药场面'], ['Drug Use', '毒品使用'],
+]);
+
+function* displayLabels(item) {
+  for (const [list, [identity, label]] of Object.entries(displayLists)) {
+    if (!Array.isArray(item[list])) continue;
+    for (const entry of item[list]) {
+      if (typeof entry?.[identity] === 'string' && typeof entry[label] === 'string') {
+        yield [list + '/' + entry[identity], entry, label];
+      }
+    }
+  }
+}
+
+function* detailItems(data) {
+  for (const object of Object.values(data.playables || {})) {
+    if (object && typeof object === 'object' && contentId(object)) yield object;
+  }
+}
+
 function artwork(image) {
   if (!appleImage.test(image?.url) ||
       !Number.isFinite(image.width) || image.width <= 0 ||
@@ -54,18 +88,21 @@ function artwork(image) {
 
 function indexRegion(data, wanted) {
   const found = new Map();
-  for (const item of displayItems(data)) {
+  for (const item of [...displayItems(data), ...detailItems(data)]) {
     const id = contentId(item);
     if (!wanted.has(id)) continue;
     const record = found.get(id) || { fields: new Map(), images: new Map() };
-    const displays = [['', item], ['header', item.header], ['canonicalMetadata', item.canonicalMetadata]];
+    for (const [key, entry, label] of displayLabels(item)) {
+      if (han.test(entry[label])) record.fields.set(key, entry[label]);
+    }
+    const displays = [[item.canonicalId ? 'playable' : '', item], ['header', item.header], ['canonicalMetadata', item.canonicalMetadata]];
     for (const [section, object] of displays) {
       for (const key of fields) {
         const value = object?.[key];
         if (typeof value === 'string' && han.test(value)) record.fields.set(section + '/' + key, value);
       }
     }
-    for (const [key, image] of Object.entries(item.images || {})) {
+    for (const [key, image] of Object.entries(item.canonicalId ? {} : item.images || {})) {
       if (!logosAndCovers.test(key)) continue;
       const valid = artwork(image);
       if (valid) record.images.set(key, valid);
@@ -136,18 +173,37 @@ function applyLocalization(items, results) {
     const id = contentId(item);
     const records = ordered.map(result => [result.region, result.items.get(id)]).filter(([, record]) => record);
     if (!records.length) continue;
-    for (const [section, object] of [['', item], ['header', item.header], ['canonicalMetadata', item.canonicalMetadata]]) {
+    for (const [section, object] of [[item.canonicalId ? 'playable' : '', item], ['header', item.header], ['canonicalMetadata', item.canonicalMetadata]]) {
       for (const key of fields) {
         if (typeof object?.[key] !== 'string') continue;
         const field = section + '/' + key;
         const simplified = summaries.has(key) && records.find(([region]) => region === 'SG')?.[1].fields.get(field);
-        const localized = simplified || records.find(([, record]) => record.fields.has(field))?.[1].fields.get(field);
+        const localized = simplified || records.find(([, record]) => record.fields.has(field))?.[1].fields.get(field)
+          || (section === 'canonicalMetadata' && key === 'episodeTitle' && item.canonicalId
+            ? records.find(([, record]) => record.fields.has('/title'))?.[1].fields.get('/title') : undefined);
         if (localized && localized !== object[key]) {
           object[key] = localized;
           stats.text++;
         }
       }
     }
+    for (const [key, entry, label] of displayLabels(item)) {
+      const localized = records.find(([, record]) => record.fields.has(key))?.[1].fields.get(key);
+      if (localized && localized !== entry[label]) {
+        entry[label] = localized;
+        stats.text++;
+      }
+    }
+    if (Array.isArray(item.contentAdvisoryDetails)) {
+      for (const advisory of item.contentAdvisoryDetails) {
+        const localized = advisoryLabels.get(advisory?.description);
+        if (localized) {
+          advisory.description = localized;
+          stats.text++;
+        }
+      }
+    }
+    if (item.canonicalId) continue;
     for (const [key, current] of Object.entries(item.images || {})) {
       if (!appleImage.test(current?.url)) continue;
       const candidate = records.find(([region, record]) => region === 'HK' && record.images.has(key) && record.fields.has('/title'))
@@ -177,7 +233,7 @@ export default async function (ctx) {
     if (!body || body.length > responseLimit) return;
     const payload = JSON.parse(body);
     if (!payload?.data || payload.error) return;
-    const items = Array.from(displayItems(payload.data));
+    const items = [...displayItems(payload.data), ...detailItems(payload.data)];
     if (!items.length) return;
 
     const browse = /^(?:canvases|shelves|brands|channels|browse)$/i.test(endpoint);
@@ -196,10 +252,10 @@ export default async function (ctx) {
     const results = await collectLookups(jobs, budget);
     const stats = applyLocalization(items, results);
     const storefront = /^(?:\d{6})(?:[-,]|$)/.exec(readParam(query, 'sf'))?.[0].slice(0, 6) || '默认';
-    console.log('[AppleTV-ZH-DYNAMIC] 片库=' + storefront + ' 查询结果=' +
+    console.log('[AppleTV-ZH-DYNAMIC v2] 片库=' + storefront + ' 查询结果=' +
       results.filter(result => result.items.size).length + ' 文字=' + stats.text + ' 图片=' + stats.images);
     if (stats.text || stats.images) return { body: JSON.stringify(payload) };
   } catch {
-    console.log('[AppleTV-ZH-DYNAMIC] 保留原始响应');
+    console.log('[AppleTV-ZH-DYNAMIC v2] 保留原始响应');
   }
 }
