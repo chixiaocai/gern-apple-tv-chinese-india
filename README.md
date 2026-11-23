@@ -1,4 +1,18 @@
-# Apple TV 中文封面（印度区・Egern 静态版 v2）
+# Apple TV 中文封面（Egern）
+
+## 印度区动态版
+
+先在 Egern 停用旧的 Apple TV 封面模块，再到「工具 → 模块 → ＋」添加远程模块。
+
+```
+https://raw.githubusercontent.com/chixiaocai/gern-apple-tv-chinese-india/main/AppleTV-Chinese-India-Dynamic.yaml
+```
+
+开启 HTTPS 解密并信任 Egern 的证书。彻底退出再打开 Apple TV，测试首页和影片详情。日志搜索 `AppleTV-ZH-DYNAMIC`。
+
+动态版按相同影片 ID 从 Apple 台湾、香港和新加坡区匹配展示文字和封面。原始片库和播放权益继续由 Apple TV 提供。首页的地区推荐可能不同，脚本也会尝试查询首个影片的详情。查询超时或没有匹配资料时沿用原始显示。继续观看等个性化列表可能仍显示原样。
+
+## 印度区静态版 v2
 
 在 Egern「工具 → 模块 → ＋」选择远程，粘贴下面的地址并启用。使用旧版 Apple TV 封面模块时，请先停用旧版。
 
