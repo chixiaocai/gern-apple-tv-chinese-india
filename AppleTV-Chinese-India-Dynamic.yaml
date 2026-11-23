@@ -1,0 +1,15 @@
+name: Apple TV 中文封面（印度区・动态版）
+description: 按影片 ID 实时匹配 Apple 中文片名、简介与封面，支持印度区。
+homepage: https://github.com/chixiaocai/gern-apple-tv-chinese-india
+scriptings:
+  - http_response:
+      name: Apple TV 中文封面（动态查询）
+      match: '^https://uts-api\.itunes\.apple\.com/uts/v[123]/(?:canvases|shelves|brands|channels|browse|movies|shows|episodes|seasons)(?:[/?]|$)'
+      script_url: https://raw.githubusercontent.com/chixiaocai/gern-apple-tv-chinese-india/main/apple-tv-zh-india-dynamic.js
+      body_required: true
+      max_size: 2097152
+      timeout: 6
+mitm:
+  hostnames:
+    includes:
+      - uts-api.itunes.apple.com
