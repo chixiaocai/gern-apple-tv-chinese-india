@@ -1,0 +1,13 @@
+name: Apple TV 中文封面（印度区・静态版）
+description: 使用内置对照表替换部分 Apple 原创剧的横版封面与片名，支持印度区。
+scriptings:
+  - http_response:
+      name: Apple TV 中文封面（印度区・静态版）
+      match: '^https://uts-api\.itunes\.apple\.com/uts/v[23]/(?:canvases|shelves|shows|movies)(?:[/?]|$)'
+      script_url: https://raw.githubusercontent.com/chixiaocai/gern-apple-tv-chinese-india/main/apple-tv-zh-india-static.js
+      body_required: true
+      max_size: 1310720
+      timeout: 5
+mitm:
+  hostnames:
+    - uts-api.itunes.apple.com
